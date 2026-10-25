@@ -600,14 +600,14 @@ table.rh select{min-width:118px}
     { id: "gds", label: "GDS", sub: "Gestion des stocks", groups: GDS_GROUPS, lists: { recus: { title: "Réception produit fini de la production", hint: "Une ligne par lot et par produit : combien de cartons la production a remis au GDS pendant ce shift. Rappel : 1 palette = 120 cartons de barres ou 70 cartons de tablettes.", add: "Ajouter une ligne de cartons", grid: "minmax(0, 1.2fr) minmax(0, 2fr) 130px auto", cols: [{ k: "lot", ph: "Lot", type: "text", auto: true }, { k: "produit", ph: "Produit fini", type: "text", dl: "dl-pf" }, { k: "cartons", ph: "Cartons", type: "number" }] }, autresMp: { title: "Autres matières premières (ajoutées par vous)", hint: "Une matière première qui n'est pas dans la liste ci-dessus : écrivez son nom et son stock en kg. Elle sera reprise automatiquement dans les prochains relevés et dans la synthèse.", add: "Ajouter une matière première", grid: "minmax(0, 2fr) 150px auto", cols: [{ k: "nom", ph: "Nom de la matière première", type: "text" }, { k: "qty", ph: "Stock (kg)", type: "number" }] } }, fields: [] }
   ];
   var PLAN_D = { id: "plan", label: "Plan de production", fields: [], lists: { lignes: { title: "Objectif de marchandises", hint: "Définir la campagne : produit, lot (si connu), quantité cible et période. Ce plan est global, pas réparti par shift.", add: "Ajouter un objectif produit", grid: "minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) 120px auto", total: "qty", unit: "cartons", cols: [{ k: "lot", ph: "Lot / campagne", type: "text" }, { k: "produit", ph: "Produit fini", type: "text", dl: "dl-pf" }, { k: "qty", ph: "Objectif (cartons)", type: "number" }, { k: "debut", ph: "Heure début (facult.)", type: "time" }] } } };
-  var ROLE_LBL = { admin: "Administrateur", production: "Production", controle: "Contrôle", maintenance: "Maintenance", hse: "HSE", gds: "GDS", lecteur: "Lecteur (consultation)" };
+  var ROLE_LBL = { admin: "Administrateur", production: "Production", controle: "Contrôle", maintenance: "Maintenance", hse: "HSE", gds: "GDS", qualite: "Assurance qualité", lecteur: "Lecteur (consultation)" };
   var sensLbl = function (x) { return x === "envoi" ? "↗ Envoi" : x === "fournisseur" ? "⬇ Fournisseur" : x === "preparation" ? "→ Préparation" : "↙ Réception"; };
   var partnerLbl = function (s) { return s === "fournisseur" ? "Fournisseur" : s === "preparation" ? "Destination (ligne / équipement)" : "Unité partenaire"; };
   var STATUTS = { transit: "En transit", ok: "Confirmé", ecart: "Écart constaté" };
   /* Une palette contient 120 cartons de barres ou 70 cartons de tablettes (les barres commencent par « Barre »). */
   var palCartons = function (name) { return /^barre/i.test(String(name || "").trim()) ? 120 : 70; };
   var MESURES = ["palettes", "cartons", "unités", "kg", "tonnes", "sacs"];
-  var TABS = [["synthese", "Synthèse"], ["saisie", "Saisie"], ["plan", "Plan de production"], ["rh", "RH"], ["march", "Marchandises"], ["histo", "Historique"], ["acces", "Paramétrage"]];
+  var TABS = [["synthese", "Synthèse"], ["saisie", "Saisie"], ["plan", "Plan de production"], ["rh", "RH"], ["march", "Marchandises"], ["qualite", "Assurance qualité"], ["histo", "Historique"], ["acces", "Paramétrage"]];
   var PERIODS = [["jour", "Aujourd'hui"], ["7j", "7 jours"], ["30j", "30 jours"], ["mois", "Mois en cours"], ["moisprec", "Mois précédent"], ["perso", "Période libre"]];
 
   /* ---------- État ---------- */
@@ -938,7 +938,7 @@ table.rh select{min-width:118px}
       if (!o.updatedAt && row.updated_at) o.updatedAt = row.updated_at;
       return o;
     });
-    if (coll === "reports") { S.cfg = S.reports.filter(function (r) { return r.dept === "config"; })[0] || null; S.plans = S.reports.filter(function (r) { return r.dept === "plan"; }); S.reports = S.reports.filter(function (r) { return r.dept !== "plan" && r.dept !== "config"; }); }
+    if (coll === "reports") { S.cfg = S.reports.filter(function (r) { return r.dept === "config"; })[0] || null; S.plans = S.reports.filter(function (r) { return r.dept === "plan"; }); S.qual = S.reports.filter(function (r) { return r.dept === "qualite"; })[0] || null; S.reports = S.reports.filter(function (r) { return r.dept !== "plan" && r.dept !== "config" && r.dept !== "qualite"; }); }
     loaded[coll] = true;
     S.ready = loaded.reports && loaded.transfers;
     onData();
@@ -1044,12 +1044,13 @@ table.rh select{min-width:118px}
     plan: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
     rh: '<path d="M17 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M21 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/>',
     march: '<path d="M1 3h13v13H1zM14 8h5l4 4v4h-9"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/>',
+    qualite: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
     histo: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     acces: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
   };
   function renderTabs() {
     $("tabs").innerHTML = TABS.filter(function (t) { return t[0] === "acces" ? (ME.role === "admin" && S.rolesOk) : t[0] === "synthese" ? ME.role === "admin" : true; }).map(function (t) {
-      return '<button class="tab" data-act="tab" data-v="' + t[0] + '"' + (S.tab === t[0] ? ' aria-current="page"' : "") + '><svg viewBox="0 0 24 24" aria-hidden="true">' + (TAB_ICONS[t[0]] || "") + "</svg><span>" + t[1] + "</span></button>";
+      return '<button class="tab" data-act="tab" data-v="' + t[0] + '"' + (S.tab === t[0] ? ' aria-current="page"' : "") + '><svg viewBox="0 0 24 24" aria-hidden="true">' + (TAB_ICONS[t[0]] || "") + "</svg><span>" + t[1] + (t[0] === "qualite" && S.ready ? ncBadge() : "") + "</span></button>";
     }).join("");
   }
   function renderPeriod() {
@@ -1081,12 +1082,89 @@ table.rh select{min-width:118px}
     else if (S.tab === "plan") { v.innerHTML = viewPlan(); drawPForm(); drawPlanTable(); }
     else if (S.tab === "rh") v.innerHTML = viewRh();
     else if (S.tab === "acces") v.innerHTML = viewAcces();
+    else if (S.tab === "qualite") v.innerHTML = viewQualite();
     else v.innerHTML = viewHisto();
   }
+
+  /* ---------- Assurance qualité : détection des non-conformités ---------- */
+  var QUAL_ID = "2000-01-02_S1_qualite", NCSEEN = null;
+  var NC_DEPTS = [["production", "Production"], ["preparation", "Préparation"], ["controle", "Contrôle"], ["maintenance", "Maintenance"], ["hse", "HSE"], ["gds", "GDS"], ["rh", "RH"]];
+  var ncDeptLbl = function (d) { var x = NC_DEPTS.filter(function (y) { return y[0] === d; })[0]; return x ? x[1] : d || "–"; };
+  var qualV = function () { return (S.qual && S.qual.v) || {}; };
+  var NC_GRAM = { coquille: "Coquille", eclats: "Éclats", creme: "Crème", fermeture: "Fermeture", pf_nu: "Produit fini nu", pf_boite: "Produit fini / boîte" };
+  function ncSev(val, rg) { var n = Number(String(val).replace(",", ".")), w = (rg[1] - rg[0]) || 1, d = n < rg[0] ? rg[0] - n : n - rg[1]; return d > w * 0.5 ? "crit" : "warn"; }
+  function ncDetect(D) {
+    var out = [];
+    (qualV().manual || []).forEach(function (m) { out.push({ id: m.id, date: m.date, shift: m.shift || "", dept: m.dept, cat: "Déclarée par l'assurance qualité", sev: m.sev || "warn", title: m.title + (m.detail ? " : " + m.detail : ""), by: m.by || "", manual: true }); });
+    return out;
+  }
+  function ncAll() {
+    var st = qualV().ncs || {};
+    return ncDetect(data()).map(function (x) { var s2 = st[x.id] || {}; return Object.assign({}, x, { st: s2.st || "ouverte", action: s2.action || "", resp: s2.resp || "", at: s2.at || "", closedBy: s2.by || "" }); })
+      .sort(function (a, b) { return (b.date + String(b.shift)).localeCompare(a.date + String(a.shift)); });
+  }
+  var ncOpenN = function (l) { return l.filter(function (x) { return x.st !== "clos"; }).length; };
+  function ncBadge() { try { var n = ncOpenN(ncAll()); return n ? ' <b class="pill crit" style="padding:0 7px;margin-left:4px">' + n + "</b>" : ""; } catch (e) { return ""; } }
+  function ncForMe(x) { return ME.role === "admin" || ME.role === "qualite" || ME.role === x.dept || (x.dept === "preparation" && ME.role === "controle"); }
+  function ncNotify() {
+    if (!S.ready) return;
+    var list = ncAll();
+    if (NCSEEN === null) { NCSEEN = {}; list.forEach(function (x) { NCSEEN[x.id] = 1; }); return; }
+    var fresh = list.filter(function (x) { return !NCSEEN[x.id]; });
+    fresh.forEach(function (x) { NCSEEN[x.id] = 1; });
+    fresh = fresh.filter(ncForMe);
+    if (!fresh.length) return;
+    var msg = fresh.slice(0, 3).map(function (x) { return "• " + ncDeptLbl(x.dept) + " : " + x.title; }).join("\n") + (fresh.length > 3 ? "\n+ " + (fresh.length - 3) + " autre(s) dans l'onglet Assurance qualité" : "");
+    alarmShow({ id: "nc-" + fresh[0].id + "-" + Date.now(), type: "Non-conformité détectée · Assurance qualité", msg: msg, by: "Assurance qualité", at: Date.now() });
+    try { renderTabs(); } catch (e) {}
+  }
+  async function saveQual(mut, msg) {
+    if (!can("qualite") || !DB) { toast("Réservé à l'Assurance qualité"); return; }
+    var v = JSON.parse(JSON.stringify(qualV())); mut(v);
+    try { await putDoc("reports", QUAL_ID, { date: "2000-01-02", shift: 1, dept: "qualite", v: v, note: "", by: ME.id || null, byName: ME.name || null, updatedAt: new Date().toISOString() }); toast(msg || "Enregistré"); S.qEdit = ""; renderView(); }
+    catch (e) { toast("Enregistrement refusé"); renderView(); }
+  }
+  var ncStPill = function (s) { return s === "clos" ? '<span class="pill good">Clôturée</span>' : s === "cours" ? '<span class="pill warn">En cours</span>' : '<span class="pill crit">Ouverte</span>'; };
+  function ncFiltered() {
+    var r = range(), l = ncAll();
+    return l.filter(function (x) {
+      if (S.qDept && x.dept !== S.qDept) return false;
+      var open = x.st !== "clos";
+      if ((S.qSt || "ouv") === "ouv") return open;
+      if (S.qSt === "clos") return !open && x.date >= r[0] && x.date <= r[1];
+      return open || (x.date >= r[0] && x.date <= r[1]);
+    });
+  }
+  function viewQualite() {
+    var all = ncAll(), open = all.filter(function (x) { return x.st !== "clos"; }), crit = open.filter(function (x) { return x.sev === "crit"; }), r = range();
+    var clo = all.filter(function (x) { return x.st === "clos" && x.date >= r[0] && x.date <= r[1]; });
+    var cards = [["Non-conformités ouvertes", open.length], ["Dont critiques", crit.length], ["Clôturées sur la période", clo.length]].map(function (x) { return '<div class="card"><span class="big">' + x[1] + '</span><p class="lab muted">' + x[0] + "</p></div>"; }).join("");
+    var byD = NC_DEPTS.map(function (d) { var n = open.filter(function (x) { return x.dept === d[0]; }).length; return n ? '<span class="pill ' + (open.some(function (x) { return x.dept === d[0] && x.sev === "crit"; }) ? "crit" : "warn") + '">' + d[1] + " : " + n + "</span>" : ""; }).join(" ");
+    var items = ncFiltered(), canQ = S.canWrite && can("qualite");
+    var dsel = '<select data-change="qdept" aria-label="Département concerné"><option value="">Tous les départements</option>' + NC_DEPTS.map(function (d) { return '<option value="' + d[0] + '"' + (S.qDept === d[0] ? " selected" : "") + ">" + d[1] + "</option>"; }).join("") + "</select>";
+    var ssel = '<select data-change="qst" aria-label="Statut">' + [["ouv", "Ouvertes et en cours"], ["tout", "Toutes (période comprise)"], ["clos", "Clôturées (période)"]].map(function (o) { return '<option value="' + o[0] + '"' + ((S.qSt || "ouv") === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select>";
+    var rows = items.map(function (x) {
+      var edit = S.qEdit === x.id;
+      var tr = "<tr><td>" + esc(dm(x.date)) + (x.shift ? "<br><span class=\"muted\">S" + esc(x.shift) + "</span>" : "") + "</td><td><b>" + esc(ncDeptLbl(x.dept)) + '</b></td><td>' + esc(x.cat) + "</td><td>" + esc(x.title) + (x.by ? '<br><span class="muted">saisi par ' + esc(x.by) + "</span>" : "") + "</td><td>" + alertPill(x.sev) + "</td><td>" + ncStPill(x.st) + "</td><td>" + (x.action ? esc(x.action) : '<span class="muted">–</span>') + (x.resp ? '<br><span class="muted">Resp. ' + esc(x.resp) + "</span>" : "") + "</td><td>" + (canQ ? '<button class="btn ghost sm" type="button" data-act="q-edit" data-id="' + esc(x.id) + '">Traiter</button>' + (x.manual ? ' <button class="btn ghost sm" type="button" data-act="q-del" data-id="' + esc(x.id) + '">Supprimer</button>' : "") : "") + "</td></tr>";
+      if (edit) tr += '<tr><td colspan="8"><div class="stack" style="gap:8px"><div class="bar"><label>Statut <select id="q-st">' + [["ouverte", "Ouverte"], ["cours", "En cours de traitement"], ["clos", "Clôturée"]].map(function (o) { return '<option value="' + o[0] + '"' + (x.st === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + '</select></label><label>Responsable <input type="text" id="q-resp" value="' + esc(x.resp) + '" placeholder="Nom du responsable" autocomplete="off"></label></div><label>Action corrective / préventive<textarea id="q-act" rows="3" placeholder="Cause identifiée, action menée, vérification de l\'efficacité…">' + esc(x.action) + '</textarea></label><div class="bar"><button class="btn" type="button" data-act="q-save" data-id="' + esc(x.id) + '">Enregistrer</button><button class="btn ghost" type="button" data-act="q-cancel">Annuler</button></div></div></td></tr>';
+      return tr;
+    }).join("");
+    var form = canQ ? '<details class="card"><summary><b>Déclarer une non-conformité</b></summary><div class="stack" style="gap:8px;margin-top:10px"><div class="bar"><label>Département concerné <select id="qn-dept">' + NC_DEPTS.map(function (d) { return '<option value="' + d[0] + '">' + d[1] + "</option>"; }).join("") + '</select></label><label>Gravité <select id="qn-sev"><option value="warn">À surveiller</option><option value="crit">Critique</option></select></label></div><label>Non-conformité <input type="text" id="qn-title" placeholder="Ex. Matière première reçue avec emballage abîmé" autocomplete="off"></label><label>Détail <textarea id="qn-detail" rows="2" placeholder="Lot, lieu, quantité, constat…"></textarea></label><div><button class="btn" type="button" data-act="q-new">Déclarer et notifier le département</button></div></div></details>' : (S.canWrite ? '<div class="lockmsg">Lecture seule : seuls l\'Assurance qualité et l\'administrateur traitent les non-conformités. Vous pouvez les consulter et les imprimer.</div>' : "");
+    return '<section class="stack"><h2>Assurance qualité : non-conformités</h2><p class="muted">Les non-conformités sont déclarées par l\'Assurance qualité. À chaque déclaration, le département concerné reçoit une notification, puis vous suivez le traitement jusqu\'à la clôture.</p><div class="grid">' + cards + "</div>" + (byD ? '<div class="bar" style="flex-wrap:wrap;gap:6px"><span class="lbl">Ouvertes par département</span>' + byD + "</div>" : "") + form +
+      '<div class="bar"><div class="bar" style="gap:8px">' + dsel + ssel + '</div><button class="btn ghost sm" type="button" data-act="q-print">Imprimer la liste</button></div><div class="card"><div class="scroll"><table><thead><tr><th>Date</th><th>Département concerné</th><th>Catégorie</th><th>Non-conformité</th><th>Gravité</th><th>Statut</th><th>Action corrective</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="8" class="muted">Aucune non-conformité déclarée pour ce filtre.</td></tr>') + "</tbody></table></div></div></section>";
+  }
+  function ncPrint() {
+    var r = range(), items = ncFiltered();
+    var h = '<table class="ft"><thead><tr><th>Date</th><th>Département</th><th>Catégorie</th><th>Non-conformité</th><th>Gravité</th><th>Statut</th><th>Action corrective</th></tr></thead><tbody>' + (items.map(function (x) { return "<tr><td>" + esc(dm(x.date)) + "</td><td>" + esc(ncDeptLbl(x.dept)) + "</td><td>" + esc(x.cat) + "</td><td>" + esc(x.title) + "</td><td>" + (x.sev === "crit" ? "Critique" : "À surveiller") + "</td><td>" + (x.st === "clos" ? "Clôturée" : x.st === "cours" ? "En cours" : "Ouverte") + "</td><td>" + esc(x.action || "–") + (x.resp ? " (resp. " + esc(x.resp) + ")" : "") + "</td></tr>"; }).join("") || '<tr><td colspan="7">Aucune non-conformité.</td></tr>') + "</tbody></table>";
+    openDoc("Non-conformités", "Période du " + dm(r[0]) + " au " + dm(r[1]), h + sigs(["Responsable assurance qualité", "Chef d'unité"]));
+  }
+
   function onData() {
     if (!S.ready) return;
     renderBanner();
     resolveNames();
+    try { ncNotify(); } catch (e) { console.warn(e); }
+    if (S.tab === "qualite" && S.qEdit) return;
     if (S.tab === "saisie") { drawMatrix(); drawMeta(); }
     else if (S.tab === "march") drawTList();
     else if (S.tab === "plan") drawPlanTable();
@@ -1367,7 +1445,7 @@ table.rh select{min-width:118px}
 
   /* ---------- Rôles et droits ---------- */
   var CFG_ID = "2000-01-01_S1_config";
-  var APP_AREAS = [["production", "Production"], ["preparation", "Préparation"], ["controle", "Contrôle"], ["maintenance", "Maintenance"], ["hse", "HSE"], ["gds", "GDS"], ["rh", "RH"], ["plan", "Plan"], ["transfers", "Mouvements"]];
+  var APP_AREAS = [["production", "Production"], ["preparation", "Préparation"], ["controle", "Contrôle"], ["maintenance", "Maintenance"], ["hse", "HSE"], ["gds", "GDS"], ["rh", "RH"], ["plan", "Plan"], ["transfers", "Mouvements"], ["qualite", "Assurance qualité"]];
   var cfgV = function () { return (S.cfg && S.cfg.v) || {}; };
   var isBlocked = function (id) { var c = cfgV(); return !!(id && c.blocked && c.blocked.indexOf(id) >= 0); };
   function canRole(r, area) {
@@ -1385,6 +1463,7 @@ table.rh select{min-width:118px}
   var can = function (area) { if (ME.role !== "admin" && isBlocked(ME.id)) return false; return canRole(ME.role || "lecteur", area); };
   function roMsg(area) {
     if (ME.role !== "admin" && isBlocked(ME.id)) return "votre accès en saisie a été suspendu par l'administrateur. Vous pouvez consulter et imprimer.";
+    if (area === "qualite") return "le suivi des non-conformités est réservé à l'Assurance qualité (et à l'administrateur). Vous pouvez le consulter et l'imprimer.";
     if (area === "rh") return "le pointage RH est réservé à la Production (et à l'administrateur). Vous pouvez le consulter et l'imprimer.";
     if (area === "plan") return "le plan de production est réservé à la Production (et à l'administrateur). Vous pouvez le consulter et l'imprimer.";
     if (area === "preparation") return "la salle de préparation est réservée à l'équipe Contrôle (et à l'administrateur). Vous pouvez la consulter et l'imprimer.";
@@ -2678,6 +2757,12 @@ table.rh select{min-width:118px}
     else if (act === "prep-lot-print") prepLotDoc(id);
     else if (act === "cfg-reset") { if (window.confirm("Rétablir les droits par défaut de tous les rôles et rouvrir toutes les saisies ?")) saveCfg(function (v) { delete v.perms; v.blocked = []; }, "Droits par défaut rétablis"); }
     else if (act === "gds-prefill") { document.querySelectorAll('#rform input[data-cur]').forEach(function (i) { if (i.value === "") i.value = i.getAttribute("data-cur"); }); toast("Stock théorique reporté dans les cases vides : vérifiez puis enregistrez"); }
+    else if (act === "q-edit") { S.qEdit = id; renderView(); }
+    else if (act === "q-cancel") { S.qEdit = ""; renderView(); }
+    else if (act === "q-print") ncPrint();
+    else if (act === "q-save") { var qs = $("q-st").value, qr = $("q-resp").value.trim(), qa = $("q-act").value.trim(); if (qs === "clos" && !qa) { toast("Indiquez l'action corrective avant de clôturer"); return; } saveQual(function (q) { q.ncs = q.ncs || {}; q.ncs[id] = { st: qs, resp: qr, action: qa, by: ME.name || "", at: new Date().toISOString() }; }, qs === "clos" ? "Non-conformité clôturée" : "Non-conformité mise à jour"); }
+    else if (act === "q-new") { var qt = $("qn-title").value.trim(); if (!qt) { toast("Décrivez la non-conformité"); return; } var nm = { id: "M|" + Date.now(), date: today(), shift: "", dept: $("qn-dept").value, sev: $("qn-sev").value, title: qt, detail: $("qn-detail").value.trim(), by: ME.name || "" }; saveQual(function (q) { q.manual = (q.manual || []).concat([nm]); }, "Non-conformité déclarée : " + ncDeptLbl(nm.dept) + " averti"); }
+    else if (act === "q-del") { if (window.confirm("Supprimer cette non-conformité déclarée ?")) saveQual(function (q) { q.manual = (q.manual || []).filter(function (m) { return m.id !== id; }); if (q.ncs) delete q.ncs[id]; }, "Supprimée"); }
     else if (act === "alarm-open") alarmOpen();
     else if (act === "alarm-cancel") $("alarmDlg").hidden = true;
     else if (act === "alarm-send") alarmSend();
@@ -2731,6 +2816,8 @@ table.rh select{min-width:118px}
     var k = e.target.getAttribute && e.target.getAttribute("data-change"); if (!k) return;
     if (k === "date") { if (e.target.value) { S.date = e.target.value; S.confirm = null; drawMatrix(); drawForm(); } }
     else if (k === "hdept") { S.hDept = e.target.value; renderView(); }
+    else if (k === "qdept") { S.qDept = e.target.value; renderView(); }
+    else if (k === "qst") { S.qSt = e.target.value; renderView(); }
     else if (k === "tsens") {
       var sv = e.target.value, pi = $("t-produit"), pl = $("t-partner-lbl"), pa = $("t-partner"), me = $("t-mesure");
       if (pi) pi.setAttribute("list", sv === "fournisseur" || sv === "preparation" ? "prods-mp" : "prods");
@@ -2827,7 +2914,7 @@ else if (k === "rhck") {
     if (!el || !DB) return;
     e.preventDefault();
     try { if (AUTH_CHANNEL) { await DB.removeChannel(AUTH_CHANNEL); AUTH_CHANNEL = null; } await DB.auth.signOut(); }
-    finally { ME = { id: null, name: "" }; S.reports = []; S.transfers = []; S.plans = []; S.cfg = null; S.roles = []; S.rolesOk = false; S.ready = false; S.storage = "error"; S.canWrite = false; showLogin("Vous êtes déconnecté."); }
+    finally { ME = { id: null, name: "" }; S.reports = []; S.transfers = []; S.plans = []; S.cfg = null; S.qual = null; NCSEEN = null; S.roles = []; S.rolesOk = false; S.ready = false; S.storage = "error"; S.canWrite = false; showLogin("Vous êtes déconnecté."); }
   });
   (async function init() {
     document.querySelectorAll("img.logo").forEach(function (i) { i.src = LOGO; });
@@ -2844,7 +2931,7 @@ else if (k === "rhck") {
       if (result.error) throw result.error;
       await enterApp(result.data.session);
       DB.auth.onAuthStateChange(function (event, session) {
-        if (event === "SIGNED_OUT") { ME = { id: null, name: "" }; S.reports = []; S.transfers = []; S.plans = []; S.cfg = null; S.roles = []; S.rolesOk = false; S.ready = false; showLogin(""); }
+        if (event === "SIGNED_OUT") { ME = { id: null, name: "" }; S.reports = []; S.transfers = []; S.plans = []; S.cfg = null; S.qual = null; NCSEEN = null; S.roles = []; S.rolesOk = false; S.ready = false; showLogin(""); }
         else if (session && session.user && !ME.id) { enterApp(session); }
       });
     } catch (err) { showLogin("Initialisation Supabase impossible : " + (err && err.message ? err.message : "erreur inconnue")); }
