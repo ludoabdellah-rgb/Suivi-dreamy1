@@ -135,6 +135,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .banner.crit { border-left-color: var(--crit); background: var(--crit-bg); }
 
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-width: 0; }
+.gfield[hidden]{display:none!important}
 .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 section.stack { gap: 12px; }
 .lead { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 32px; align-items: end; }
@@ -597,7 +598,7 @@ table.rh select{min-width:118px}
       { k: "sensib", label: "Sensibilisations HSE réalisées", unit: "nombre" },
       { k: "themeSens", label: "Thème de la sensibilisation", type: "text", full: true } ] },
     { id: "rh", label: "RH", sub: "Présence du personnel", rh: true, fields: [] },
-    { id: "gds", label: "GDS", sub: "Gestion des stocks", groups: GDS_GROUPS, lists: { recus: { title: "Réception produit fini de la production", hint: "Une ligne par lot et par produit : combien de cartons la production a remis au GDS pendant ce shift. Rappel : 1 palette = 120 cartons de barres ou 70 cartons de tablettes.", add: "Ajouter une ligne de cartons", grid: "minmax(0, 1.2fr) minmax(0, 2fr) 130px auto", cols: [{ k: "lot", ph: "Lot", type: "text", auto: true }, { k: "produit", ph: "Produit fini", type: "text", dl: "dl-pf" }, { k: "cartons", ph: "Cartons", type: "number" }] }, autresMp: { title: "Autres matières premières (ajoutées par vous)", hint: "Une matière première qui n'est pas dans la liste ci-dessus : écrivez son nom et son stock en kg. Elle sera reprise automatiquement dans les prochains relevés et dans la synthèse.", add: "Ajouter une matière première", grid: "minmax(0, 2fr) 150px auto", cols: [{ k: "nom", ph: "Nom de la matière première", type: "text" }, { k: "qty", ph: "Stock (kg)", type: "number" }] } }, fields: [] }
+    { id: "gds", label: "GDS", sub: "Gestion des stocks", groups: GDS_GROUPS, lists: { recus: { title: "Réception produit fini de la production", hint: "Une ligne par lot et par produit : combien de cartons la production a remis au GDS pendant ce shift. Rappel : 1 palette = 120 cartons de barres ou 70 cartons de tablettes.", add: "Ajouter une ligne de cartons", grid: "minmax(0, 1.2fr) minmax(0, 2fr) 130px auto", cols: [{ k: "lot", ph: "Lot", type: "text", auto: true }, { k: "produit", ph: "Produit fini", type: "text", dl: "dl-pf" }, { k: "cartons", ph: "Cartons", type: "number" }] }, autresMp: { title: "Autres matières premières (ajoutées par vous)", hint: "Une matière première qui n'est pas dans la liste ci-dessus : écrivez son nom et son stock en kg. Elle sera reprise automatiquement dans les prochains relevés et dans la synthèse.", add: "Ajouter une matière première", asField: true, grid: "minmax(0, 2fr) 150px auto", cols: [{ k: "nom", ph: "Nom de la matière première", type: "text" }, { k: "qty", ph: "Stock (kg)", type: "number" }] } }, fields: [] }
   ];
   var PLAN_D = { id: "plan", label: "Plan de production", fields: [], lists: { lignes: { title: "Objectif de marchandises", hint: "Définir la campagne : produit, lot (si connu), quantité cible et période. Ce plan est global, pas réparti par shift.", add: "Ajouter un objectif produit", grid: "minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) 120px auto", total: "qty", unit: "cartons", cols: [{ k: "lot", ph: "Lot / campagne", type: "text" }, { k: "produit", ph: "Produit fini", type: "text", dl: "dl-pf" }, { k: "qty", ph: "Objectif (cartons)", type: "number" }, { k: "debut", ph: "Heure début (facult.)", type: "time" }] } } };
   var ROLE_LBL = { admin: "Administrateur", production: "Production", controle: "Contrôle", maintenance: "Maintenance", hse: "HSE", gds: "GDS", qualite: "Assurance qualité", lecteur: "Lecteur (consultation)" };
@@ -792,12 +793,22 @@ table.rh select{min-width:118px}
     if (g.key === "mp") return m === "kg" ? q : m === "tonnes" ? q * 1000 : null;
     return m === "cartons" ? q : m === "palettes" ? q * palCartons(name) : null;
   }
+  function gdsRetSet(all, keyMax, strict) {
+    var best = null;
+    all.forEach(function (r) {
+      if (r.dept !== "gds" || !r.v || !Array.isArray(r.v.retires)) return;
+      var k = r.date + "_S" + r.shift; if (strict ? k >= keyMax : k > keyMax) return;
+      if (!best || k > best.k) best = { k: k, a: r.v.retires };
+    });
+    var o = {}; (best ? best.a : []).forEach(function (x) { o[x] = 1; }); return o;
+  }
   function stockState(all, a, b) {
     var gds = all.filter(function (r) { return r.dept === "gds" && r.date <= b; }).sort(function (x, y) { return (x.date + x.shift).localeCompare(y.date + y.shift); });
-    var out = { ruptures: [], suivis: 0, total: 0, lastDate: null };
+    var out = { ruptures: [], suivis: 0, total: 0, lastDate: null }, ret = gdsRetSet(gds, b + "_S9", false);
     GDS_GROUPS.forEach(function (g) {
       var names = g.items.slice();
       if (g.key === "mp") gds.forEach(function (r) { ((r.v && r.v.autresMp) || []).forEach(function (x) { var nm = String(x.nom || "").trim(); if (nm && !names.some(function (y) { return y.toLowerCase() === nm.toLowerCase(); })) names.push(nm); }); });
+      names = names.filter(function (n) { return !ret[g.key + ":" + slug(n)]; });
       out[g.key] = names.map(function (name) {
         var k = slug(name), last = null, first = null, base = g.items.indexOf(name) >= 0;
         gds.forEach(function (r) {
@@ -1233,8 +1244,8 @@ table.rh select{min-width:118px}
     return '<section class="stack"><h2>Rapport par lot</h2>' + (lots.length ? lots.map(lotCard).join("") + '<p class="foot">Signal produit / emballé fini : vert = aucun écart, orange = écart jusqu\'à 3 %, rouge = écart au-delà de 3 %. Chaque lot réunit la production, le contrôle, la maintenance, le HSE, les cartons remis au GDS et le pointage RH. La maintenance, le HSE et le pointage RH sont rattachés au lot fabriqué pendant le même shift, sauf si un lot précis est indiqué dans la fiche.</p>' : '<div class="card"><p class="muted">Aucune saisie sur la période.</p></div>') + "</section>";
   }
 
-  var RH_COLS = [["present", "Présent"], ["absent", "Absent"], ["retard", "Retard"], ["maladie", "Congé maladie"], ["annuel", "Congé annuel"], ["sortie", "Bon de sortie"]];
-  var RH_EXCL = ["present", "absent", "maladie", "annuel"];
+  var RH_COLS = [["present", "Présent"], ["absent", "Absent"], ["retard", "Retard"], ["maladie", "Congé maladie"], ["annuel", "Congé annuel"], ["sortie", "Bon de sortie"], ["demission", "Démission"]];
+  var RH_EXCL = ["present", "absent", "maladie", "annuel", "demission"];
   var RH_GRPS = [["production", "Production"], ["controle", "Contrôle"], ["hse", "HSE"], ["maintenance", "Maintenance"], ["gds", "GDS"]];
   var grpLbl = function (g) { var x = RH_GRPS.filter(function (o) { return o[0] === g; })[0]; return x ? x[1] : g; };
   /* Service d'une personne : explicite, sinon déduit du poste. Le nettoyage des moules relève de la production. */
@@ -1257,7 +1268,7 @@ table.rh select{min-width:118px}
   }
   function rhStart(shift, id) {
     var prev = S.reports.filter(function (r) { return r.dept === "rh" && Number(r.shift) === Number(shift) && r.id !== id && r.v && r.v.eff && r.v.eff.length; }).sort(function (a, b) { return b.date.localeCompare(a.date); })[0];
-    if (prev) return prev.v.eff.map(function (x) { return { nom: x.nom || "", poste: x.poste || "", grp: rhGrp(x), present: true }; });
+    if (prev) return prev.v.eff.filter(function (x) { return !x.demission; }).map(function (x) { return { nom: x.nom || "", poste: x.poste || "", grp: rhGrp(x), present: true }; });
     return rhTemplate(shift);
   }
   function rhRow(x) {
@@ -1269,7 +1280,7 @@ table.rh select{min-width:118px}
       '<td><button type="button" class="btn ghost sm" data-act="rh-del">Retirer</button></td></tr>';
   }
   function rhBlock(items) {
-    return '<p class="hint full">Cochez une case par personne. Présent, Absent, Congé maladie et Congé annuel s\'excluent ; Retard et Bon de sortie concernent une personne présente. La colonne Service sert au décompte automatique des présents et absents de la production (hors contrôle et HSE). Heures sup : nombre d\'heures supplémentaires de la personne pour ce shift (ex. 2 ou 1,5). La liste est reprise automatiquement d\'un jour à l\'autre pour ce shift.</p>' +
+    return '<p class="hint full">Cochez une case par personne. Présent, Absent, Congé maladie, Congé annuel et Démission s\'excluent ; Démission : la personne a quitté l\'entreprise, elle ne sera plus reprise dans la liste des jours suivants. Retard et Bon de sortie concernent une personne présente. La colonne Service sert au décompte automatique des présents et absents de la production (hors contrôle et HSE). Heures sup : nombre d\'heures supplémentaires de la personne pour ce shift (ex. 2 ou 1,5). La liste est reprise automatiquement d\'un jour à l\'autre pour ce shift.</p>' +
       '<div class="full" id="rhsum"></div><div class="full scroll"><table class="rh"><thead><tr><th>Nom</th><th>Poste</th><th>Service</th>' + RH_COLS.map(function (c) { return '<th class="ck">' + c[1] + "</th>"; }).join("") + '<th class="ck">Heures sup</th><th></th></tr></thead><tbody id="rhbody">' + items.map(rhRow).join("") + "</tbody></table></div>" +
       '<div class="full actions"><button type="button" class="btn ghost sm" data-act="rh-add">Ajouter une personne</button><button type="button" class="btn ghost sm" data-act="rh-all">Tout marquer présent</button></div>';
   }
@@ -1287,15 +1298,15 @@ table.rh select{min-width:118px}
     return out;
   }
   function rhCount(eff) {
-    var c = { eff: 0, pres: 0, abs: 0, ret: 0, mal: 0, ann: 0, sor: 0, hs: 0 };
-    (eff || []).forEach(function (x) { c.hs += Number(x.hs) || 0; c.eff++; if (x.present) c.pres++; if (x.absent) c.abs++; if (x.retard) c.ret++; if (x.maladie) c.mal++; if (x.annuel) c.ann++; if (x.sortie) c.sor++; });
+    var c = { eff: 0, pres: 0, abs: 0, ret: 0, mal: 0, ann: 0, sor: 0, dem: 0, hs: 0 };
+    (eff || []).forEach(function (x) { c.hs += Number(x.hs) || 0; c.eff++; if (x.present) c.pres++; if (x.absent) c.abs++; if (x.retard) c.ret++; if (x.maladie) c.mal++; if (x.annuel) c.ann++; if (x.sortie) c.sor++; if (x.demission) c.dem++; });
     return c;
   }
   var rhGrpCount = function (eff, g) { return rhCount((eff || []).filter(function (x) { return rhGrp(x) === g; })); };
   var rhRep = function (date, shift) { return S.reports.filter(function (r) { return r.id === date + "_S" + shift + "_rh"; })[0] || null; };
   var hsF = function (n) { return String(Math.round((Number(n) || 0) * 100) / 100).replace(".", ","); };
   function rhSumHtml(c) {
-    return '<div class="card" style="padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px 18px"><span><b>' + c.eff + "</b> personnes</span><span>Présents <b>" + c.pres + "</b></span><span>Absents <b>" + c.abs + "</b></span><span>Retards <b>" + c.ret + "</b></span><span>Congés maladie <b>" + c.mal + "</b></span><span>Congés annuels <b>" + c.ann + "</b></span><span>Bons de sortie <b>" + c.sor + "</b></span><span>Heures sup <b>" + hsF(c.hs) + "</b></span></div>";
+    return '<div class="card" style="padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px 18px"><span><b>' + c.eff + "</b> personnes</span><span>Présents <b>" + c.pres + "</b></span><span>Absents <b>" + c.abs + "</b></span><span>Retards <b>" + c.ret + "</b></span><span>Congés maladie <b>" + c.mal + "</b></span><span>Congés annuels <b>" + c.ann + "</b></span><span>Bons de sortie <b>" + c.sor + "</b></span><span>Démissions <b>" + c.dem + "</b></span><span>Heures sup <b>" + hsF(c.hs) + "</b></span></div>";
   }
   function prodLineHtml(c, extra) {
     return '<div class="card" style="padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px"><b>Postes de production</b><span>Présents <b>' + c.pres + "</b></span><span>Absents <b>" + c.abs + "</b></span><span>Congés <b>" + (c.mal + c.ann) + "</b></span><span>Retards <b>" + c.ret + "</b></span>" + (extra || "") + "</div>";
@@ -1321,39 +1332,39 @@ table.rh select{min-width:118px}
       (r.v && r.v.eff || []).forEach(function (x) {
         var g = rhGrp(x); if (grpF && g !== grpF) return;
         var key = x.nom ? "n:" + x.nom.trim().toLowerCase() : (x.poste ? "p:" + x.poste.trim().toLowerCase() + "|" + r.shift : ""); if (!key) return;
-        var q = map[key] || (map[key] = { nom: x.nom || "", poste: x.poste || "", grp: g, shifts: {}, days: {}, c: { n: 0, pres: 0, abs: 0, ret: 0, mal: 0, ann: 0, sor: 0, hs: 0 } });
+        var q = map[key] || (map[key] = { nom: x.nom || "", poste: x.poste || "", grp: g, shifts: {}, days: {}, c: { n: 0, pres: 0, abs: 0, ret: 0, mal: 0, ann: 0, sor: 0, dem: 0, hs: 0 } });
         if (x.nom && !q.nom) q.nom = x.nom; if (x.poste) q.poste = x.poste; q.grp = g;
         q.shifts[r.shift] = 1; q.days[r.date] = Object.assign({ _s: r.shift }, x);
-        var c = q.c; c.hs += Number(x.hs) || 0; c.n++; if (x.present) c.pres++; if (x.absent) c.abs++; if (x.retard) c.ret++; if (x.maladie) c.mal++; if (x.annuel) c.ann++; if (x.sortie) c.sor++;
+        var c = q.c; c.hs += Number(x.hs) || 0; c.n++; if (x.present) c.pres++; if (x.absent) c.abs++; if (x.retard) c.ret++; if (x.maladie) c.mal++; if (x.annuel) c.ann++; if (x.sortie) c.sor++; if (x.demission) c.dem++;
       });
     });
     return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return (a.nom || a.poste).localeCompare(b.nom || b.poste); });
   }
   function rhCode(x) {
-    if (!x) return ""; if (x.absent) return "A"; if (x.maladie) return "M"; if (x.annuel) return "C";
+    if (!x) return ""; if (x.absent) return "A"; if (x.maladie) return "M"; if (x.annuel) return "C"; if (x.demission) return "D";
     if (x.present) return x.retard && x.sortie ? "RB" : x.retard ? "R" : x.sortie ? "B" : "P";
     return "–";
   }
-  var RH_CLS = { A: "crit", M: "none", C: "none", P: "good", R: "warn", B: "warn", RB: "warn" };
-  var RH_CODE_TXT = { A: "Absent", M: "Congé maladie", C: "Congé annuel", P: "Présent", R: "Présent, en retard", B: "Présent, bon de sortie", RB: "Présent, retard et bon de sortie" };
+  var RH_CLS = { A: "crit", M: "none", C: "none", P: "good", R: "warn", B: "warn", RB: "warn", D: "none" };
+  var RH_CODE_TXT = { A: "Absent", M: "Congé maladie", C: "Congé annuel", P: "Présent", R: "Présent, en retard", B: "Présent, bon de sortie", RB: "Présent, retard et bon de sortie", D: "Démission (a quitté l'entreprise)" };
   function rhTablesHtml(people, a, b, ft) {
     var cls = ft ? ' class="ft"' : "";
     if (!people.length) return '<p class="muted">Aucun pointage RH sur cette période pour ces filtres.</p>';
     var rate = function (c) { return c.n ? P(c.pres / c.n * 100) : "–"; };
-    var h = "<table" + cls + '><thead><tr><th>Employé</th><th>Poste</th><th>Service</th><th>Shift</th><th class="num">Jours pointés</th><th class="num">Présent</th><th class="num">Absent</th><th class="num">Retard</th><th class="num">Congé maladie</th><th class="num">Congé annuel</th><th class="num">Bon de sortie</th><th class="num">Heures sup</th><th class="num">Présence</th></tr></thead><tbody>';
+    var h = "<table" + cls + '><thead><tr><th>Employé</th><th>Poste</th><th>Service</th><th>Shift</th><th class="num">Jours pointés</th><th class="num">Présent</th><th class="num">Absent</th><th class="num">Retard</th><th class="num">Congé maladie</th><th class="num">Congé annuel</th><th class="num">Bon de sortie</th><th class="num">Démission</th><th class="num">Heures sup</th><th class="num">Présence</th></tr></thead><tbody>';
     people.forEach(function (q) {
       var c = q.c, sh = Object.keys(q.shifts).sort().map(function (s) { return "S" + s; }).join(", ");
-      h += "<tr><td>" + esc(q.nom || "(sans nom)") + "</td><td>" + esc(q.poste || "–") + "</td><td>" + esc(grpLbl(q.grp)) + "</td><td>" + sh + '</td><td class="num">' + c.n + '</td><td class="num">' + c.pres + '</td><td class="num">' + (c.abs ? "<b>" + c.abs + "</b>" : "0") + '</td><td class="num">' + c.ret + '</td><td class="num">' + c.mal + '</td><td class="num">' + c.ann + '</td><td class="num">' + c.sor + '</td><td class="num">' + (c.hs ? "<b>" + hsF(c.hs) + "</b>" : "0") + '</td><td class="num">' + rate(c) + "</td></tr>";
+      h += "<tr><td>" + esc(q.nom || "(sans nom)") + "</td><td>" + esc(q.poste || "–") + "</td><td>" + esc(grpLbl(q.grp)) + "</td><td>" + sh + '</td><td class="num">' + c.n + '</td><td class="num">' + c.pres + '</td><td class="num">' + (c.abs ? "<b>" + c.abs + "</b>" : "0") + '</td><td class="num">' + c.ret + '</td><td class="num">' + c.mal + '</td><td class="num">' + c.ann + '</td><td class="num">' + c.sor + '</td><td class="num">' + c.dem + '</td><td class="num">' + (c.hs ? "<b>" + hsF(c.hs) + "</b>" : "0") + '</td><td class="num">' + rate(c) + "</td></tr>";
     });
-    var t = { n: 0, pres: 0, abs: 0, ret: 0, mal: 0, ann: 0, sor: 0, hs: 0 };
+    var t = { n: 0, pres: 0, abs: 0, ret: 0, mal: 0, ann: 0, sor: 0, dem: 0, hs: 0 };
     people.forEach(function (q) { Object.keys(t).forEach(function (k) { t[k] += q.c[k]; }); });
-    h += '<tr><td colspan="4"><b>Total (' + people.length + " personnes)</b></td>" + ["n", "pres", "abs", "ret", "mal", "ann", "sor", "hs"].map(function (k) { return '<td class="num"><b>' + (k === "hs" ? hsF(t[k]) : t[k]) + "</b></td>"; }).join("") + '<td class="num"><b>' + rate(t) + "</b></td></tr></tbody></table>";
+    h += '<tr><td colspan="4"><b>Total (' + people.length + " personnes)</b></td>" + ["n", "pres", "abs", "ret", "mal", "ann", "sor", "dem", "hs"].map(function (k) { return '<td class="num"><b>' + (k === "hs" ? hsF(t[k]) : t[k]) + "</b></td>"; }).join("") + '<td class="num"><b>' + rate(t) + "</b></td></tr></tbody></table>";
     var days = daysList(a, b), cal = "";
     if (days.length <= 45) {
       cal = '<h3 style="margin:18px 0 8px">Calendrier de présence</h3><div class="scroll"><table class="cal"><thead><tr><th class="nm">Employé</th>' + days.map(function (d) { return '<th title="' + esc(dl(d)) + '">' + parse(d).getDate() + "</th>"; }).join("") + "</tr></thead><tbody>" +
         people.map(function (q) {
           return '<tr><td class="nm">' + esc(q.nom || q.poste || "–") + "</td>" + days.map(function (d) { var x = q.days[d], cd = rhCode(x); return cd ? '<td class="cal-' + RH_CLS[cd] + '" title="' + esc(dl(d) + " : " + RH_CODE_TXT[cd]) + '">' + cd + "</td>" : "<td></td>"; }).join("") + "</tr>";
-        }).join("") + '</tbody></table></div><p class="foot" style="margin-top:6px">P présent · A absent · R retard · B bon de sortie · M congé maladie · C congé annuel · case vide : pas de pointage ce jour. Mois : ' + esc(dm(a)) + " au " + esc(dm(b)) + ".</p>";
+        }).join("") + '</tbody></table></div><p class="foot" style="margin-top:6px">P présent · A absent · R retard · B bon de sortie · M congé maladie · C congé annuel · D démission · case vide : pas de pointage ce jour. Mois : ' + esc(dm(a)) + " au " + esc(dm(b)) + ".</p>";
     } else cal = '<p class="foot" style="margin-top:8px">Le calendrier jour par jour est affiché pour les périodes de 45 jours au plus.</p>';
     return '<div class="scroll">' + h + "</div>" + cal;
   }
@@ -1361,7 +1372,7 @@ table.rh select{min-width:118px}
     var c = q.c, days = daysList(a, b), hs = 0, mnames = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
     Object.keys(q.days).forEach(function (d) { if (d >= a && d <= b) hs += Number(q.days[d].hs) || 0; });
     var h = '<p><b>' + esc(q.nom || q.poste) + "</b> · " + esc(q.poste || "–") + " · " + esc(grpLbl(q.grp)) + "</p>" +
-      '<p class="muted">' + c.n + " jour(s) pointé(s) · présent " + c.pres + " · <b>absent " + c.abs + "</b> · retard " + c.ret + " · congé maladie " + c.mal + " · congé annuel " + c.ann + " · bon de sortie " + c.sor + " · <b>heures sup " + hsF(hs) + " h</b></p>";
+      '<p class="muted">' + c.n + " jour(s) pointé(s) · présent " + c.pres + " · <b>absent " + c.abs + "</b> · retard " + c.ret + " · congé maladie " + c.mal + " · congé annuel " + c.ann + " · bon de sortie " + c.sor + " · démission " + c.dem + " · <b>heures sup " + hsF(hs) + " h</b></p>";
     if (days.length > 93) return h + '<p class="foot">Le calendrier est affiché pour les périodes de trois mois au plus.</p>';
     var months = [], seen = {};
     days.forEach(function (d) { var m = d.slice(0, 7); if (!seen[m]) { seen[m] = 1; months.push(m); } });
@@ -1379,8 +1390,8 @@ table.rh select{min-width:118px}
       for (i = 0; i < cells.length; i += 7) h += "<tr>" + cells.slice(i, i + 7).join("") + "</tr>";
       h += "</tbody></table></div>";
     });
-    h += '<p class="foot" style="margin-top:6px">P présent · A absent · R retard · B bon de sortie · M congé maladie · C congé annuel · +Xh heures supplémentaires · case sans code : pas de pointage ce jour.</p>';
-    var rows = days.filter(function (d) { var x = q.days[d]; return x && (x.absent || x.maladie || x.annuel || x.retard || x.sortie || x.hs); });
+    h += '<p class="foot" style="margin-top:6px">P présent · A absent · R retard · B bon de sortie · M congé maladie · C congé annuel · D démission · +Xh heures supplémentaires · case sans code : pas de pointage ce jour.</p>';
+    var rows = days.filter(function (d) { var x = q.days[d]; return x && (x.absent || x.maladie || x.annuel || x.retard || x.sortie || x.demission || x.hs); });
     if (rows.length) h += '<h3 style="margin:14px 0 6px">Détail des jours à signaler</h3><div class="scroll"><table' + (ft ? ' class="ft"' : "") + '><thead><tr><th>Date</th><th>Shift</th><th>Situation</th><th class="num">Heures sup</th></tr></thead><tbody>' + rows.map(function (d) { var x = q.days[d]; return "<tr><td>" + esc(dl(d)) + "</td><td>S" + x._s + "</td><td>" + esc(RH_CODE_TXT[rhCode(x)] || "–") + '</td><td class="num">' + (x.hs ? hsF(x.hs) + " h" : "–") + "</td></tr>"; }).join("") + "</tbody></table></div>";
     return h;
   }
@@ -1394,13 +1405,13 @@ table.rh select{min-width:118px}
     return { r: r, people: rhPeople(rs, S.rShift, S.rGrp), rs: rs };
   }
   function viewRh() {
-    var V = rhView(), people = V.people, r = V.r, tot = { n: 0, pres: 0, abs: 0, ret: 0, mal: 0, ann: 0, sor: 0, hs: 0 };
+    var V = rhView(), people = V.people, r = V.r, tot = { n: 0, pres: 0, abs: 0, ret: 0, mal: 0, ann: 0, sor: 0, dem: 0, hs: 0 };
     people.forEach(function (q) { Object.keys(tot).forEach(function (k) { tot[k] += q.c[k]; }); });
     var ssel = '<select data-change="rshift" aria-label="Shift"><option value="">Tous les shifts</option>' + SHIFTS.map(function (s) { return '<option value="' + s.id + '"' + (S.rShift === String(s.id) ? " selected" : "") + ">" + s.label + "</option>"; }).join("") + "</select>";
     var gsel = '<select data-change="rgrp" aria-label="Service"><option value="">Tous les services</option>' + RH_GRPS.map(function (o) { return '<option value="' + o[0] + '"' + (S.rGrp === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select>";
     var pq = rhPersonOf(V), psel = '<select data-change="rperson" aria-label="Employé"><option value="">Choisir un employé…</option>' + people.map(function (q) { var nm = q.nom || q.poste; return '<option value="' + esc(nm) + '"' + (S.rPerson === nm ? " selected" : "") + ">" + esc(nm) + (q.nom && q.poste ? " · " + esc(q.poste) : "") + "</option>"; }).join("") + "</select>";
     var psec = '<div class="card stack"><div class="bar"><h3 style="margin:0">Calendrier d\'absence d\'un employé</h3><div style="min-width:240px">' + psel + "</div>" + (pq ? '<button class="btn ghost sm" type="button" data-act="rh-person-print">Imprimer sa fiche</button>' : "") + "</div>" + (pq ? rhPersonHtml(pq, r[0], r[1], false) : '<p class="muted">Choisissez un employé pour voir son calendrier : présences, absences, congés, retards, bons de sortie et heures supplémentaires sur la période sélectionnée.</p>') + "</div>";
-    var cards = [["Présences", tot.pres], ["Absences", tot.abs], ["Retards", tot.ret], ["Congés maladie", tot.mal], ["Congés annuels", tot.ann], ["Bons de sortie", tot.sor], ["Heures sup", hsF(tot.hs)]].map(function (x) { return '<div class="card"><span class="big">' + x[1] + '</span><p class="lab muted">' + x[0] + "</p></div>"; }).join("");
+    var cards = [["Présences", tot.pres], ["Absences", tot.abs], ["Retards", tot.ret], ["Congés maladie", tot.mal], ["Congés annuels", tot.ann], ["Bons de sortie", tot.sor], ["Démissions", tot.dem], ["Heures sup", hsF(tot.hs)]].map(function (x) { return '<div class="card"><span class="big">' + x[1] + '</span><p class="lab muted">' + x[0] + "</p></div>"; }).join("");
     return '<section class="stack"><div class="bar"><h2>État du personnel</h2><div style="width:180px">' + ssel + '</div><div style="width:200px">' + gsel + '</div><button class="btn ghost sm" type="button" data-act="rh-print">Imprimer cet état</button></div>' +
       '<p class="muted">Période : ' + esc(periodLabel()) + " · " + people.length + " personne(s) pointée(s). Choisissez « Période libre » au-dessus pour fixer vos propres dates (un mois, une semaine, etc.). Le pointage se saisit dans Saisie, département RH.</p>" +
       '<div class="grid">' + cards + '</div>' + psec + '<div class="card stack">' + rhTablesHtml(people, r[0], r[1], false) + "</div></section>";
@@ -2110,6 +2121,7 @@ table.rh select{min-width:118px}
   }
   function listRow(L, lk, x) {
     x = x || {};
+    if (L.asField) return '<div class="field iv-row" style="display:flex;flex-direction:column;gap:6px;align-items:stretch;background:none;border:0;box-shadow:none;padding:0">' + listCell(L, lk, L.cols[0], x) + listCell(L, lk, L.cols[1], x) + '<button type="button" class="btn ghost sm" data-act="rm-row" data-lk="' + lk + '">Retirer cette matière</button></div>';
     return '<div class="iv-row" style="grid-template-columns:' + L.grid + '">' + L.cols.map(function (c) {
       var cell = listCell(L, lk, c, x);
       return L.labels ? '<label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted,#666);min-width:0"><span>' + esc(c.ph) + "</span>" + cell + "</label>" : cell;
@@ -2117,6 +2129,7 @@ table.rh select{min-width:118px}
   }
   function listBlock(d, lk, v) {
     var L = d.lists[lk], items = v[lk] && v[lk].length ? v[lk] : [{}];
+    if (L.asField) return '<div data-list="' + lk + '" style="display:contents">' + (v[lk] || []).map(function (it) { return listRow(L, lk, it); }).join("") + '</div><div class="full"><button type="button" class="btn ghost sm" data-act="add-row" data-lk="' + lk + '">＋ ' + L.add + "</button></div>";
     return '<h3 class="sep">' + L.title + "</h3>" + (L.hint ? '<p class="hint full">' + L.hint + "</p>" : "") + '<div class="full stack" data-list="' + lk + '" style="gap:8px">' + items.map(function (it) { return listRow(L, lk, it); }).join("") + '</div>' + (function () { var seen = {}; return L.cols.filter(function (c) { if (!c.dl || seen[c.dl]) return false; seen[c.dl] = 1; return true; }).map(function (c) { return '<datalist id="' + c.dl + '">' + (DL_MAP[c.dl] || PF).map(function (p) { return '<option value="' + esc(p) + '">'; }).join("") + "</datalist>"; }).join(""); })() + '<div class="full"><button type="button" class="btn ghost sm" data-act="add-row" data-lk="' + lk + '">' + L.add + "</button>" + (L.now ? ' <button type="button" class="btn sm" data-act="row-now" data-lk="' + lk + '">' + L.now + "</button>" : "") + (L.now2 ? ' <button type="button" class="btn sm" data-act="row-now2" data-lk="' + lk + '">' + L.now2 + "</button>" : "") + (L.total ? ' <span class="lbl" data-total="' + lk + '" style="margin-left:8px"></span>' : "") + "</div>";
   }
   function prepRowsHtml(z, v) {
@@ -2221,6 +2234,11 @@ table.rh select{min-width:118px}
   document.addEventListener("input", function () { accBadges(document.getElementById("form")); });
   document.addEventListener("change", function () { accBadges(document.getElementById("form")); });
   document.addEventListener("click", function () { setTimeout(function () { accBadges(document.getElementById("form")); }, 30); });
+  function gdsRetDraw() {
+    var box = document.getElementById("gds-ret"); if (!box) return;
+    var gone = Array.prototype.slice.call(document.querySelectorAll(".gfield[hidden]"));
+    box.innerHTML = gone.length ? '<details class="card"><summary><b>Éléments retirés de la liste (' + gone.length + ")</b> : réactiver</summary><div class=\"stack\" style=\"gap:6px;margin-top:8px\">" + gone.map(function (f) { var lb = f.querySelector("label"); return '<div class="bar"><span>' + esc(lb ? lb.textContent : "") + " · " + (f.getAttribute("data-gk").indexOf("mp:") === 0 ? "matière première" : "produit fini") + '</span><button type="button" class="btn ghost sm" data-act="gds-restore" data-gk="' + esc(f.getAttribute("data-gk")) + '">Réactiver</button></div>'; }).join("") + "</div></details>" : "";
+  }
   function drawForm() {
     var el = $("form"); if (!el) return;
     var d = deptOf(S.dept), rep = findReport(), v = rep ? rep.v || {} : {}, body = "", carried = null;
@@ -2229,14 +2247,19 @@ table.rh select{min-width:118px}
       if (carried) { v = Object.assign({}, v); PREP_ZONES.forEach(function (z) { z.eq.forEach(function (e) { ["p", "q"].forEach(function (s) { var k = e[0] + s; if (carried.v && carried.v[k] != null && carried.v[k] !== "") v[k] = carried.v[k]; }); }); }); }
     }
     if (d.groups) {
-      var vx = gdsExtraV(v), stkNow = stockState(S.reports, "0000-00-00", S.date), curOf = {};
+      var curKey = S.date + "_S" + S.shift, vx = gdsExtraV(v), stkNow = stockState(S.reports, "0000-00-00", S.date), curOf = {};
+      var retSet = rep && rep.v && Array.isArray(rep.v.retires) ? (function () { var o = {}; rep.v.retires.forEach(function (x) { o[x] = 1; }); return o; })() : gdsRetSet(S.reports, curKey, true);
       ["mp", "pf"].forEach(function (gk) { stkNow[gk].forEach(function (it) { curOf[gk + ":" + slug(it.name)] = it; }); });
-      body = listBlock(d, "recus", v) + '<p class="hint full">Laissez vide ce qui n\'est pas relevé. Saisissez 0 pour une rupture. Le stock théorique tient compte des mouvements de marchandises (envois, transferts vers la préparation, réceptions).</p><div class="full"><button type="button" class="btn ghost sm" data-act="gds-prefill">Pré-remplir avec le stock théorique</button></div>' + d.groups.map(function (g) {
+      var frozen = !rep;
+      if (frozen) vx = { autresMp: (vx.autresMp || []).filter(function (x) { return !retSet["mp:" + slug(x.nom || "")]; }).map(function (x) { var it = curOf["mp:" + slug(x.nom || "")]; return { nom: x.nom || "", qty: it && it.cur != null ? Math.max(0, Math.round(it.cur * 100) / 100) : (x.qty == null ? null : x.qty) }; }) };
+      else vx = { autresMp: (vx.autresMp || []).filter(function (x) { return !retSet["mp:" + slug(x.nom || "")]; }) };
+      body = listBlock(d, "recus", v) + '<p class="hint full">' + (frozen ? "<b>Stock figé</b> : les quantités sont reprises du dernier relevé, mouvements de marchandises compris. Modifiez seulement ce qui change, puis enregistrez : le stock reste identique d'un shift à l'autre jusqu'à votre changement. " : "") + 'Laissez vide ce qui n\'est pas relevé. Saisissez 0 pour une rupture. Utilisez « Retirer » pour sortir une matière première ou un produit fini de la liste (réactivable en bas de page).</p><div class="full"><button type="button" class="btn ghost sm" data-act="gds-prefill">Remettre le stock théorique dans les cases vides</button></div>' + d.groups.map(function (g) {
         return '<h3 class="sep">' + g.title + "</h3>" + g.items.map(function (name) {
-          var k = slug(name), val = v[g.key] && v[g.key][k] != null ? v[g.key][k] : "", it = curOf[g.key + ":" + k];
-          return '<div class="field"><label for="g-' + g.key + "-" + k + '">' + esc(name) + '</label><input type="number" id="g-' + g.key + "-" + k + '" name="' + g.key + ":" + k + '" min="0" step="any" inputmode="decimal" value="' + esc(val) + '"' + (it && it.cur != null ? ' placeholder="théorique : ' + esc(N(it.cur)) + '" data-cur="' + Math.max(0, Math.round(it.cur * 100) / 100) + '"' : "") + ">" + (it && it.mv ? '<span class="hint">Mouvements depuis le dernier relevé : ' + (it.mv > 0 ? "+" : "") + N(it.mv) + "</span>" : "") + "</div>";
+          var k = slug(name), saved = v[g.key] && v[g.key][k] != null ? v[g.key][k] : "", it = curOf[g.key + ":" + k], gone = !!retSet[g.key + ":" + k];
+          var val = saved !== "" ? saved : (frozen && it && it.cur != null ? Math.max(0, Math.round(it.cur * 100) / 100) : "");
+          return '<div class="field gfield" data-gk="' + g.key + ":" + k + '"' + (gone ? " hidden" : "") + '><label for="g-' + g.key + "-" + k + '">' + esc(name) + '</label><input type="number" id="g-' + g.key + "-" + k + '" name="' + g.key + ":" + k + '" min="0" step="any" inputmode="decimal" value="' + esc(val) + '"' + (gone ? " disabled" : "") + (it && it.cur != null ? ' placeholder="théorique : ' + esc(N(it.cur)) + '" data-cur="' + Math.max(0, Math.round(it.cur * 100) / 100) + '"' : "") + ">" + (it && it.mv ? '<span class="hint">Mouvements depuis le dernier relevé : ' + (it.mv > 0 ? "+" : "") + N(it.mv) + "</span>" : "") + '<button type="button" class="btn ghost sm" data-act="gds-retire" aria-label="Retirer ' + esc(name) + ' de la liste">Retirer</button></div>';
         }).join("") + (g.key === "mp" ? listBlock(d, "autresMp", vx) : "");
-      }).join("");
+      }).join("") + '<div class="full" id="gds-ret"></div>';
     } else if (d.rh) body = rhBlock(v.eff && v.eff.length ? v.eff : rhStart(S.shift, S.date + "_S" + S.shift + "_rh"));
     else body = d.fields.map(function (f) { return fieldHtml(f, v, d); }).join("");
     if (d.id === "controle") body += ipcPanel(v);
@@ -2249,6 +2272,7 @@ table.rh select{min-width:118px}
     updateCoh(); updateRh(); autoFillProd(); updateTotals(); updatePrep();
     if (d.id === "controle") ipcFlagAll(el);
     accInit(el, d);
+    if (d.groups) gdsRetDraw();
     if (d.prep) { var cp = el.querySelector('[name="contenuPar"]'); if (cp && !cp.value && ME.name) cp.value = ME.name; }
     if(d.id === "controle") { var pfAvg=v.ipcG&&v.ipcG.pf_nu&&v.ipcG.pf_nu.avg; var pfField=el.querySelector('[name="gramPF"]'); if(pfAvg!=null&&pfField) pfField.value=pfAvg; }
   }
@@ -2293,6 +2317,16 @@ table.rh select{min-width:118px}
       }
       if (arr.length) v[lk] = arr;
     });
+    if (d.groups) {
+      var retired = {}, curNames = {};
+      form.querySelectorAll(".gfield[hidden]").forEach(function (f) { retired[f.getAttribute("data-gk")] = 1; });
+      (v.autresMp || []).forEach(function (x) { curNames[slug(x.nom || "")] = 1; delete retired["mp:" + slug(x.nom || "")]; });
+      var ck = S.date + "_S" + S.shift, prevEx = S.reports.filter(function (r) { return r.dept === "gds" && (r.date + "_S" + r.shift) !== ck && r.v && r.v.autresMp && r.v.autresMp.length; }).sort(function (a, b) { return (b.date + b.shift).localeCompare(a.date + a.shift); })[0];
+      var prevRet = gdsRetSet(S.reports, ck, true);
+      if (prevEx) prevEx.v.autresMp.forEach(function (x) { var sk = slug(x.nom || ""); if (sk && !curNames[sk] && !prevRet["mp:" + sk]) retired["mp:" + sk] = 1; });
+      Object.keys(prevRet).forEach(function (kx) { if (kx.indexOf("mp:") === 0 && curNames[kx.slice(3)]) delete retired[kx]; });
+      v.retires = Object.keys(retired);
+    }
     if (d.id === "production" && v.arrets && v.arrets.length) {
       var totalStop = v.arrets.reduce(function(sum,row){if(!row.debut||!row.fin)return sum;var a=row.debut.split(":").map(Number),b=row.fin.split(":").map(Number);var mins=(b[0]*60+b[1])-(a[0]*60+a[1]);if(mins<0)mins+=1440;row.min=mins;return sum+mins;},0);
       v.arret=totalStop;
@@ -2675,7 +2709,7 @@ table.rh select{min-width:118px}
       var lk = el.getAttribute("data-lk"), L = listDefOf(lk), lst = document.querySelector('div[data-list="' + lk + '"]');
       if (lst && L) {
         if (act === "add-row") { lst.insertAdjacentHTML("beforeend", listRow(L, lk)); var ins = lst.querySelectorAll(".iv-row"); ins[ins.length - 1].querySelector("input").focus(); }
-        else { var rowEl = el.closest(".iv-row"); if (rowEl) rowEl.remove(); if (!lst.querySelector(".iv-row")) lst.insertAdjacentHTML("beforeend", listRow(L, lk)); updateTotals(); updateStops(null); }
+        else { var rowEl = el.closest(".iv-row"); if (rowEl) rowEl.remove(); if (!lst.querySelector(".iv-row") && !L.asField) lst.insertAdjacentHTML("beforeend", listRow(L, lk)); updateTotals(); updateStops(null); }
       }
     }
     else if (act === "del-rep") { S.confirm = "rep"; drawForm(); }
@@ -2757,6 +2791,8 @@ table.rh select{min-width:118px}
     else if (act === "prep-lot-print") prepLotDoc(id);
     else if (act === "cfg-reset") { if (window.confirm("Rétablir les droits par défaut de tous les rôles et rouvrir toutes les saisies ?")) saveCfg(function (v) { delete v.perms; v.blocked = []; }, "Droits par défaut rétablis"); }
     else if (act === "gds-prefill") { document.querySelectorAll('#rform input[data-cur]').forEach(function (i) { if (i.value === "") i.value = i.getAttribute("data-cur"); }); toast("Stock théorique reporté dans les cases vides : vérifiez puis enregistrez"); }
+    else if (act === "gds-retire") { var fe = el.closest(".gfield"), fl = fe && fe.querySelector("label"); if (fe && window.confirm("Retirer « " + (fl ? fl.textContent : "") + " » de la liste du GDS ?\nIl n'apparaîtra plus dans la saisie ni dans le stock de la synthèse. Vous pourrez le réactiver en bas de page.")) { fe.hidden = true; var fi = fe.querySelector("input"); if (fi) fi.disabled = true; gdsRetDraw(); toast("Retiré de la liste : cliquez sur Enregistrer pour confirmer"); } }
+    else if (act === "gds-restore") { var fr = document.querySelector('.gfield[data-gk="' + el.getAttribute("data-gk") + '"]'); if (fr) { fr.hidden = false; var fj = fr.querySelector("input"); if (fj) fj.disabled = false; } gdsRetDraw(); toast("Réactivé : cliquez sur Enregistrer pour confirmer"); }
     else if (act === "q-edit") { S.qEdit = id; renderView(); }
     else if (act === "q-cancel") { S.qEdit = ""; renderView(); }
     else if (act === "q-print") ncPrint();
