@@ -56,7 +56,7 @@ details.acc-sec{margin:2px 0}
 #alarmDlg select,#alarmDlg textarea{width:100%;font:inherit;padding:9px 10px;border-radius:8px;border:1px solid var(--faint,#ccc);background:var(--bg,#fff);color:inherit}
 #alarmDlg .acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 #alarmDlg .alog{font-size:12.5px;max-height:120px;overflow:auto;border-top:1px solid var(--faint,#ddd);padding-top:8px}
-#alarmOv{position:fixed;inset:0;z-index:2000;background:rgba(30,22,20,.45);display:flex;align-items:center;justify-content:center;padding:18px}
+#alarmOv{position:fixed;inset:0;z-index:2000;background:rgba(30,22,20,.45);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:18px;overflow:auto}#alarmOv .acard{flex:none}
 #alarmOv .acard{background:var(--card,#fff);color:var(--ink,#222);border-radius:16px;max-width:460px;width:100%;box-shadow:0 18px 44px rgba(0,0,0,.28);overflow:hidden;text-align:left}
 #alarmOv .ahead{padding:14px 18px;color:#fff;font-weight:700;font-size:17px;display:flex;gap:10px;align-items:center}
 #alarmOv .ahead.urg{background:#B3261E}#alarmOv .ahead.warn{background:#B7791F}#alarmOv .ahead.info{background:#2F6B8A}
@@ -802,9 +802,22 @@ table.rh select{min-width:118px}
     });
     var o = {}; (best ? best.a : []).forEach(function (x) { o[x] = 1; }); return o;
   }
+  var RECEP_ID = "2000-01-03_S1_transfers", RSEEN = null;
+  function recepItems(all) {
+    var val = (S.recep && S.recep.v && S.recep.v.val) || {}, out = [];
+    all.forEach(function (r) {
+      if (r.dept !== "production") return;
+      ((r.v && r.v.paldesc) || []).forEach(function (x, i) {
+        var c = Number(x.cartons), pr = String(x.produit || "").trim(); if (!pr || !(c > 0)) return;
+        var id = r.id + "#" + i + "|" + slug(pr) + "|" + c + "|" + (x.heure || ""), vv = val[id] || null;
+        out.push({ id: id, date: r.date, shift: r.shift, heure: x.heure || "", produit: pr, cartons: c, st: vv ? vv.st : "attente", qty: vv ? (vv.st === "refuse" ? 0 : Number(vv.qty)) : c, by: vv ? vv.by || "" : "", at: vv ? vv.at || "" : "", note: vv ? vv.note || "" : "" });
+      });
+    });
+    return out.sort(function (a, b) { return (a.date + a.shift + a.heure).localeCompare(b.date + b.shift + b.heure); });
+  }
   function stockState(all, a, b) {
     var gds = all.filter(function (r) { return r.dept === "gds" && r.date <= b; }).sort(function (x, y) { return (x.date + x.shift).localeCompare(y.date + y.shift); });
-    var out = { ruptures: [], suivis: 0, total: 0, lastDate: null }, ret = gdsRetSet(gds, b + "_S9", false);
+    var out = { ruptures: [], suivis: 0, total: 0, lastDate: null }, ret = gdsRetSet(gds, b + "_S9", false), RI = recepItems(all);
     GDS_GROUPS.forEach(function (g) {
       var names = g.items.slice();
       if (g.key === "mp") gds.forEach(function (r) { ((r.v && r.v.autresMp) || []).forEach(function (x) { var nm = String(x.nom || "").trim(); if (nm && !names.some(function (y) { return y.toLowerCase() === nm.toLowerCase(); })) names.push(nm); }); });
@@ -825,6 +838,7 @@ table.rh select{min-width:118px}
           var q = moveQty(t, g, name); if (q == null) { unconv++; return; }
           mv += sg * q; hasMv = true;
         });
+        if (g.key === "pf") RI.forEach(function (it) { if (slug(it.produit) !== k || it.date > b) return; if (last && (it.date + "_" + it.shift) <= lastKey) return; if (it.qty > 0) { mv += it.qty; hasMv = true; } });
         var cur = last ? last.val + mv : hasMv ? mv : null;
         if (cur != null) { out.suivis++; if (last && (!out.lastDate || last.date > out.lastDate)) out.lastDate = last.date; if (cur <= 0) out.ruptures.push({ name: name, grp: g.key }); }
         out.total++;
@@ -949,7 +963,7 @@ table.rh select{min-width:118px}
       if (!o.updatedAt && row.updated_at) o.updatedAt = row.updated_at;
       return o;
     });
-    if (coll === "reports") { S.cfg = S.reports.filter(function (r) { return r.dept === "config"; })[0] || null; S.plans = S.reports.filter(function (r) { return r.dept === "plan"; }); S.qual = S.reports.filter(function (r) { return r.dept === "qualite"; })[0] || null; S.reports = S.reports.filter(function (r) { return r.dept !== "plan" && r.dept !== "config" && r.dept !== "qualite"; }); }
+    if (coll === "reports") { S.cfg = S.reports.filter(function (r) { return r.dept === "config"; })[0] || null; S.plans = S.reports.filter(function (r) { return r.dept === "plan"; }); S.qual = S.reports.filter(function (r) { return r.dept === "qualite"; })[0] || null; S.recep = S.reports.filter(function (r) { return r.dept === "recep"; })[0] || null; S.reports = S.reports.filter(function (r) { return r.dept !== "plan" && r.dept !== "config" && r.dept !== "qualite" && r.dept !== "recep"; }); }
     loaded[coll] = true;
     S.ready = loaded.reports && loaded.transfers;
     onData();
@@ -1001,23 +1015,59 @@ table.rh select{min-width:118px}
       chime(); if ((times || 1) > 1) ALARM.timer = setInterval(chime, 3000);
     } catch (e) {}
   }
-  function alarmKind(t) { return /accident|incendie|aide/i.test(t) ? "urg" : /arr[êe]t|qualit/i.test(t) ? "warn" : "info"; }
+  function alarmKind(t) { return /accident|incendie|aide/i.test(t) ? "urg" : /arr[êe]t|qualit|valider/i.test(t) ? "warn" : "info"; }
+  var ACK_MEM = {};
+  function ackAll() { try { return JSON.parse(localStorage.getItem("suivi:ack") || "{}"); } catch (e) { return {}; } }
+  function ackIs(id) { return !!(ACK_MEM[id] || ackAll()[id]); }
+  function ackPut(ids) {
+    var t = Date.now(); ids.forEach(function (i) { ACK_MEM[i] = t; });
+    try { var o = ackAll(); ids.forEach(function (i) { o[i] = t; }); Object.keys(o).forEach(function (k) { if (t - o[k] > 14 * 864e5) delete o[k]; }); localStorage.setItem("suivi:ack", JSON.stringify(o)); } catch (e) {}
+  }
+  function alarmEnd() {
+    var ov = $("alarmOv"); if (ov && !ov.querySelector(".acard")) { ov.hidden = true; ov.innerHTML = ""; alarmSiren(false); if (ALARM.titleTimer) { clearInterval(ALARM.titleTimer); ALARM.titleTimer = null; document.title = ALARM.title; } }
+  }
+  function alarmDrop(key) { var ov = $("alarmOv"); if (!ov) return; var c = ov.querySelector('[data-key="' + key + '"]'); if (c) { c.remove(); alarmEnd(); } }
   function alarmShow(a) {
-    if (!a || !a.id || ALARM.seen[a.id]) return; ALARM.seen[a.id] = 1; alarmLogPut(a);
+    if (!a || !a.id) return;
+    var key = a.key || a.id, ids = a.ackIds || ["al|" + a.id];
+    if (!a.key) { if (ALARM.seen[a.id]) return; ALARM.seen[a.id] = 1; }
+    if (ids.every(ackIs)) return;
     var ov = $("alarmOv"); if (!ov) return;
-    var kind = alarmKind(a.type), icon = kind === "urg" ? "🚨" : kind === "warn" ? "⚠️" : /r[ée]ception/i.test(a.type) ? "📦" : "ℹ️";
-    ov.innerHTML = '<div class="acard"><div class="ahead ' + kind + '"><span aria-hidden="true">' + icon + "</span><span>" + (kind === "urg" ? "Alerte · " : "") + esc(a.type) + '</span></div><div class="abody"><div class="am">' + esc(a.msg || "Aucun message précisé") + '</div><div class="ab">Envoyé par <b>' + esc(a.by || "un utilisateur") + "</b> à " + esc(new Date(a.at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })) + '</div><button type="button" data-act="alarm-ack">OK, bien reçu</button></div></div>';
+    var ex = ov.querySelector('[data-key="' + key + '"]'); if (ex && ex.getAttribute("data-ids") === ids.join(",")) return;
+    if (!a.key) alarmLogPut(a);
+    var kind = alarmKind(a.type), icon = kind === "urg" ? "🚨" : kind === "warn" ? "⚠️" : /r[ée]ception/i.test(a.type) ? "📦" : "ℹ️", d = new Date(a.at || Date.now()), sameDay = d.toDateString() === new Date().toDateString();
+    var when = (sameDay ? "à " : "le " + d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }) + " à ") + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    var html = '<div class="acard" data-key="' + esc(key) + '" data-ids="' + esc(ids.join(",")) + '"><div class="ahead ' + kind + '"><span aria-hidden="true">' + icon + "</span><span>" + (kind === "urg" ? "Alerte · " : "") + esc(a.type) + '</span></div><div class="abody"><div class="am">' + esc(a.msg || "Aucun message précisé") + '</div><div class="ab">' + (a.late ? "<b>Reçue pendant votre absence</b> · " : "") + (a.key ? "" : "Envoyé par <b>" + esc(a.by || "un utilisateur") + "</b> " + when) + '</div><button type="button" data-act="alarm-ack">OK, bien reçu</button></div></div>';
+    if (ex) ex.outerHTML = html; else ov.insertAdjacentHTML("beforeend", html);
     ov.hidden = false; alarmSiren(true, kind === "urg" ? 3 : 1);
-    try { if (window.Notification && Notification.permission === "granted" && document.hidden) { var nt = new Notification((alarmKind(a.type) === "urg" ? "🚨 " : "") + a.type, { body: (a.by ? a.by + " : " : "") + (a.msg || ""), tag: a.id, requireInteraction: true }); nt.onclick = function () { window.focus(); nt.close(); }; } } catch (e) {}
+    try { if (window.Notification && Notification.permission === "granted" && document.hidden) { var nt = new Notification((kind === "urg" ? "🚨 " : "") + a.type, { body: (a.by ? a.by + " : " : "") + (a.msg || ""), tag: key, requireInteraction: true }); nt.onclick = function () { window.focus(); nt.close(); }; } } catch (e) {}
   }
-  function alarmAck() {
-    var ov = $("alarmOv"); if (ov) { ov.hidden = true; ov.innerHTML = ""; } alarmSiren(false);
-    if (ALARM.titleTimer) { clearInterval(ALARM.titleTimer); ALARM.titleTimer = null; document.title = ALARM.title; }
+  function alarmAck(card) {
+    if (card) { var ids = (card.getAttribute("data-ids") || "").split(",").filter(Boolean); ackPut(ids); card.remove(); }
+    else { var ov0 = $("alarmOv"); if (ov0) ov0.querySelectorAll(".acard").forEach(function (c) { ackPut((c.getAttribute("data-ids") || "").split(",").filter(Boolean)); c.remove(); }); }
+    alarmSiren(false); alarmEnd();
   }
+  async function alarmsCatchUp() {
+    if (!DB || !ME || !ME.id) return;
+    try {
+      var r = await DB.from("alarms").select("id,payload,created_at").gte("created_at", new Date(Date.now() - 48 * 36e5).toISOString()).order("created_at", { ascending: true });
+      if (r.error || !r.data) return;
+      r.data.forEach(function (row) { var p = Object.assign({}, row.payload || {}); p.id = p.id || row.id; p.at = p.at || row.created_at; if (ackIs("al|" + p.id)) return; p.late = Date.now() - new Date(p.at).getTime() > 60000; alarmShow(p); });
+    } catch (e) {}
+  }
+  function alarmResync() {
+    if (document.hidden || !DB || !ME || !ME.id) return;
+    Promise.all([loadTable("reports"), loadTable("transfers")]).catch(function () {}).then(alarmsCatchUp);
+  }
+  document.addEventListener("visibilitychange", alarmResync);
+  window.addEventListener("online", alarmResync);
+  window.addEventListener("focus", alarmResync);
+  setInterval(function () { if (!document.hidden) alarmsCatchUp(); }, 60000);
   function alarmSend() {
     var a = { id: Date.now() + "-" + Math.random().toString(36).slice(2, 8), type: $("alarmType").value, msg: $("alarmMsg").value.trim(), by: ME.name || "Utilisateur", at: new Date().toISOString() };
     if (!AUTH_CHANNEL || !AUTH_CHANNEL.send) { toast("Alarme impossible : connexion temps réel indisponible."); return; }
     try {
+      DB.from("alarms").insert({ id: a.id, payload: a }).then(function (x) { if (x && x.error) toast("Alerte envoyée en direct mais non conservée : lancez maj_v11.sql dans Supabase"); }, function () {});
       var r = AUTH_CHANNEL.send({ type: "broadcast", event: "alarme", payload: a });
       if (r && r.then) r.then(function (s) { if (s && s !== "ok") toast("Alarme non envoyée (" + s + ")"); }).catch(function () { toast("Alarme non envoyée"); });
     } catch (e) { toast("Alarme non envoyée"); return; }
@@ -1078,6 +1128,7 @@ table.rh select{min-width:118px}
     if (ME && ME.id && S.storage === "db" && !S.rolesOk) h += '<div class="banner warn"><span>Rôles non configurés : tous les utilisateurs connectés peuvent tout modifier. Exécutez le script acces_roles.sql dans Supabase pour activer les restrictions par département.</span></div>';
     if (ME && ME.id && S.rolesOk && ME.role === "lecteur") h += '<div class="banner warn"><span>Votre compte est en consultation seule : demandez à l\'administrateur de vous attribuer votre rôle.</span></div>';
     if (ME && ME.id) h += '<div class="banner"><span>Connecté : ' + esc(ME.name || "utilisateur autorisé") + (S.rolesOk ? " · rôle : " + esc(ROLE_LBL[ME.role] || ME.role) : "") + (ME.role !== "admin" && isBlocked(ME.id) ? " · saisie suspendue" : "") + '</span><button class="btn ghost sm" type="button" data-act="logout">Se déconnecter</button></div>';
+    if (S.ready && ME && (ME.role === "admin" || ME.role === "gds")) { var pn = recepPending().length; if (pn) h += '<div class="banner warn"><span>📦 ' + pn + " réception(s) de la production à valider (le stock est déjà mis à jour).</span>" + '<button class="btn ghost sm" type="button" data-act="go-recep">Valider</button></div>'; }
     el.innerHTML = h;
   }
   function render() {
@@ -1119,14 +1170,10 @@ table.rh select{min-width:118px}
   function ncForMe(x) { return ME.role === "admin" || ME.role === "qualite" || ME.role === x.dept || (x.dept === "preparation" && ME.role === "controle"); }
   function ncNotify() {
     if (!S.ready) return;
-    var list = ncAll();
-    if (NCSEEN === null) { NCSEEN = {}; list.forEach(function (x) { NCSEEN[x.id] = 1; }); return; }
-    var fresh = list.filter(function (x) { return !NCSEEN[x.id]; });
-    fresh.forEach(function (x) { NCSEEN[x.id] = 1; });
-    fresh = fresh.filter(ncForMe);
-    if (!fresh.length) return;
-    var msg = fresh.slice(0, 3).map(function (x) { return "• " + ncDeptLbl(x.dept) + " : " + x.title; }).join("\n") + (fresh.length > 3 ? "\n+ " + (fresh.length - 3) + " autre(s) dans l'onglet Assurance qualité" : "");
-    alarmShow({ id: "nc-" + fresh[0].id + "-" + Date.now(), type: "Non-conformité détectée · Assurance qualité", msg: msg, by: "Assurance qualité", at: Date.now() });
+    var mine = ncAll().filter(function (x) { return x.st !== "clos" && ncForMe(x) && !(x.manual && x.by && x.by === ME.name) && !ackIs("nc|" + x.id); });
+    if (!mine.length) { alarmDrop("nc"); return; }
+    var msg = mine.slice(0, 3).map(function (x) { return "• " + ncDeptLbl(x.dept) + " : " + x.title; }).join("\n") + (mine.length > 3 ? "\n+ " + (mine.length - 3) + " autre(s) dans l'onglet Assurance qualité" : "");
+    alarmShow({ id: "nc", key: "nc", ackIds: mine.map(function (x) { return "nc|" + x.id; }), type: "Non-conformité déclarée · Assurance qualité", msg: msg, by: "Assurance qualité", at: Date.now() });
     try { renderTabs(); } catch (e) {}
   }
   async function saveQual(mut, msg) {
@@ -1170,11 +1217,46 @@ table.rh select{min-width:118px}
     openDoc("Non-conformités", "Période du " + dm(r[0]) + " au " + dm(r[1]), h + sigs(["Responsable assurance qualité", "Chef d'unité"]));
   }
 
+
+  async function saveRecep(mut, msg) {
+    if (!can("transfers") || !DB) { toast("Réservé au GDS"); return; }
+    var v = JSON.parse(JSON.stringify((S.recep && S.recep.v) || {})); mut(v);
+    try { await putDoc("reports", RECEP_ID, { date: "2000-01-03", shift: 1, dept: "recep", v: v, note: "", by: ME.id || null, byName: ME.name || null, updatedAt: new Date().toISOString() }); toast(msg || "Réception enregistrée"); }
+    catch (e) { toast("Enregistrement refusé"); }
+  }
+  function recepPanelHtml() {
+    var items = recepItems(S.reports), pend = items.filter(function (x) { return x.st === "attente"; }), done = items.filter(function (x) { return x.st !== "attente"; }).slice(-8).reverse(), canV = S.canWrite && can("transfers");
+    if (!pend.length && !done.length) return "";
+    var pal = function (x) { return nf1.format(x.cartons / palCartons(x.produit)); };
+    var rows = pend.map(function (x) {
+      return '<div class="iv-row recep-row" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) auto"><div><b>' + esc(x.produit) + "</b><br><span class=\"muted\">" + esc(dm(x.date)) + " · S" + esc(x.shift) + (x.heure ? " · " + esc(String(x.heure).replace(":", "h")) : "") + " · " + N(x.cartons) + " cartons (≈ " + pal(x) + " palette)</span></div>" +
+        (canV ? '<label style="font-size:11px">Cartons réellement reçus<input type="number" min="0" step="any" inputmode="decimal" value="' + x.cartons + '" data-decl="' + x.cartons + '"></label><div class="bar" style="gap:6px"><button type="button" class="btn sm" data-act="recep-ok" data-id="' + esc(x.id) + '">Valider</button><button type="button" class="btn ghost sm" data-act="recep-no" data-id="' + esc(x.id) + '">Refuser</button></div>' : '<span class="muted">En attente de validation du GDS</span><span></span>') + "</div>";
+    }).join("");
+    var hist = done.length ? '<details><summary class="muted">Dernières réceptions traitées (' + done.length + ')</summary><div class="stack" style="gap:4px;margin-top:6px">' + done.map(function (x) { return "<div>" + (x.st === "ok" ? '<span class="pill good">Validée</span>' : x.st === "ecart" ? '<span class="pill warn">Écart</span>' : '<span class="pill crit">Refusée</span>') + " " + esc(x.produit) + " · " + esc(dm(x.date)) + " · " + (x.st === "refuse" ? "0" : N(x.qty)) + " / " + N(x.cartons) + " cartons" + (x.by ? ' <span class="muted">par ' + esc(x.by) + "</span>" : "") + (x.note ? ' <span class="muted">« ' + esc(x.note) + " »</span>" : "") + "</div>"; }).join("") + "</div></details>" : "";
+    return '<div class="card stack" style="gap:8px;border-left:4px solid #B7791F"><div class="bar"><h3 style="margin:0">Réceptions de la production</h3>' + (pend.length ? '<span class="pill warn">' + pend.length + " à valider</span>" : '<span class="pill good">Tout est traité</span>') + "</div>" + (pend.length ? '<p class="hint" style="margin:0">La production a descendu ces palettes : le stock est déjà augmenté. Validez la réception (ou corrigez les cartons réellement reçus) ; un refus retire les cartons du stock.</p>' : "") + rows + hist + "</div>";
+  }
+  function updateRecep() {
+    var b = document.getElementById("recepbox"); if (!b || (document.activeElement && document.activeElement.tagName === "INPUT" && b.contains(document.activeElement))) return;
+    var h = recepPanelHtml(); if (b.__h !== h) { b.__h = h; b.innerHTML = h; }
+  }
+  function recepPending() { return recepItems(S.reports).filter(function (x) { return x.st === "attente"; }); }
+  function recepNotify() {
+    if (!S.ready) return;
+    var pend = (ME.role === "admin" || ME.role === "gds") ? recepPending().filter(function (x) { return !ackIs("rc|" + x.id); }) : [];
+    if (!pend.length) { alarmDrop("rc"); return; }
+    var msg = pend.slice(0, 4).map(function (x) { return "• " + x.produit + " : " + N(x.cartons) + " cartons (shift " + x.shift + ")"; }).join("\n") + (pend.length > 4 ? "\n+ " + (pend.length - 4) + " autre(s)" : "") + "\nLe stock est déjà mis à jour : validez ou refusez la réception dans Saisie > GDS.";
+    alarmShow({ id: "rc", key: "rc", ackIds: pend.map(function (x) { return "rc|" + x.id; }), type: "Réception de la production à valider", msg: msg, by: "Production", at: Date.now() });
+    renderBanner();
+  }
+
   function onData() {
     if (!S.ready) return;
     renderBanner();
     resolveNames();
+    if (!ALARM.caught) { ALARM.caught = true; alarmsCatchUp(); }
     try { ncNotify(); } catch (e) { console.warn(e); }
+    try { recepNotify(); } catch (e) { console.warn(e); }
+    if (S.tab === "saisie" && S.dept === "gds") updateRecep();
     if (S.tab === "qualite" && S.qEdit) return;
     if (S.tab === "saisie") { drawMatrix(); drawMeta(); }
     else if (S.tab === "march") drawTList();
@@ -2253,7 +2335,7 @@ table.rh select{min-width:118px}
       var frozen = !rep;
       if (frozen) vx = { autresMp: (vx.autresMp || []).filter(function (x) { return !retSet["mp:" + slug(x.nom || "")]; }).map(function (x) { var it = curOf["mp:" + slug(x.nom || "")]; return { nom: x.nom || "", qty: it && it.cur != null ? Math.max(0, Math.round(it.cur * 100) / 100) : (x.qty == null ? null : x.qty) }; }) };
       else vx = { autresMp: (vx.autresMp || []).filter(function (x) { return !retSet["mp:" + slug(x.nom || "")]; }) };
-      body = listBlock(d, "recus", v) + '<p class="hint full">' + (frozen ? "<b>Stock figé</b> : les quantités sont reprises du dernier relevé, mouvements de marchandises compris. Modifiez seulement ce qui change, puis enregistrez : le stock reste identique d'un shift à l'autre jusqu'à votre changement. " : "") + 'Laissez vide ce qui n\'est pas relevé. Saisissez 0 pour une rupture. Utilisez « Retirer » pour sortir une matière première ou un produit fini de la liste (réactivable en bas de page).</p><div class="full"><button type="button" class="btn ghost sm" data-act="gds-prefill">Remettre le stock théorique dans les cases vides</button></div>' + d.groups.map(function (g) {
+      body = '<div class="full" id="recepbox"></div>' + listBlock(d, "recus", v) + '<p class="hint full">' + (frozen ? "<b>Stock figé</b> : les quantités sont reprises du dernier relevé, mouvements de marchandises compris. Modifiez seulement ce qui change, puis enregistrez : le stock reste identique d'un shift à l'autre jusqu'à votre changement. " : "") + 'Laissez vide ce qui n\'est pas relevé. Saisissez 0 pour une rupture. Utilisez « Retirer » pour sortir une matière première ou un produit fini de la liste (réactivable en bas de page).</p><div class="full"><button type="button" class="btn ghost sm" data-act="gds-prefill">Remettre le stock théorique dans les cases vides</button></div>' + d.groups.map(function (g) {
         return '<h3 class="sep">' + g.title + "</h3>" + g.items.map(function (name) {
           var k = slug(name), saved = v[g.key] && v[g.key][k] != null ? v[g.key][k] : "", it = curOf[g.key + ":" + k], gone = !!retSet[g.key + ":" + k];
           var val = saved !== "" ? saved : (frozen && it && it.cur != null ? Math.max(0, Math.round(it.cur * 100) / 100) : "");
@@ -2272,7 +2354,7 @@ table.rh select{min-width:118px}
     updateCoh(); updateRh(); autoFillProd(); updateTotals(); updatePrep();
     if (d.id === "controle") ipcFlagAll(el);
     accInit(el, d);
-    if (d.groups) gdsRetDraw();
+    if (d.groups) { gdsRetDraw(); updateRecep(); }
     if (d.prep) { var cp = el.querySelector('[name="contenuPar"]'); if (cp && !cp.value && ME.name) cp.value = ME.name; }
     if(d.id === "controle") { var pfAvg=v.ipcG&&v.ipcG.pf_nu&&v.ipcG.pf_nu.avg; var pfField=el.querySelector('[name="gramPF"]'); if(pfAvg!=null&&pfField) pfField.value=pfAvg; }
   }
@@ -2793,6 +2875,9 @@ table.rh select{min-width:118px}
     else if (act === "gds-prefill") { document.querySelectorAll('#rform input[data-cur]').forEach(function (i) { if (i.value === "") i.value = i.getAttribute("data-cur"); }); toast("Stock théorique reporté dans les cases vides : vérifiez puis enregistrez"); }
     else if (act === "gds-retire") { var fe = el.closest(".gfield"), fl = fe && fe.querySelector("label"); if (fe && window.confirm("Retirer « " + (fl ? fl.textContent : "") + " » de la liste du GDS ?\nIl n'apparaîtra plus dans la saisie ni dans le stock de la synthèse. Vous pourrez le réactiver en bas de page.")) { fe.hidden = true; var fi = fe.querySelector("input"); if (fi) fi.disabled = true; gdsRetDraw(); toast("Retiré de la liste : cliquez sur Enregistrer pour confirmer"); } }
     else if (act === "gds-restore") { var fr = document.querySelector('.gfield[data-gk="' + el.getAttribute("data-gk") + '"]'); if (fr) { fr.hidden = false; var fj = fr.querySelector("input"); if (fj) fj.disabled = false; } gdsRetDraw(); toast("Réactivé : cliquez sur Enregistrer pour confirmer"); }
+    else if (act === "go-recep") { S.tab = "saisie"; S.dept = "gds"; lsSet("suivi:tab", "saisie"); render(); window.scrollTo(0, 0); }
+    else if (act === "recep-ok") { var rq = el.closest(".recep-row").querySelector("input"), qv = Number(String(rq.value).replace(",", ".")), dc = Number(rq.getAttribute("data-decl")); if (!isFinite(qv) || qv < 0 || rq.value === "") { toast("Indiquez le nombre de cartons reçus"); return; } saveRecep(function (q) { q.val = q.val || {}; q.val[id] = { st: qv === dc ? "ok" : "ecart", qty: qv, by: ME.name || "", at: new Date().toISOString() }; }, qv === dc ? "Réception validée" : "Réception validée avec écart : " + N(qv) + " / " + N(dc) + " cartons"); }
+    else if (act === "recep-no") { var why = window.prompt("Motif du refus (facultatif) :"); if (why === null) return; saveRecep(function (q) { q.val = q.val || {}; q.val[id] = { st: "refuse", qty: 0, note: why.trim(), by: ME.name || "", at: new Date().toISOString() }; }, "Réception refusée : cartons retirés du stock"); }
     else if (act === "q-edit") { S.qEdit = id; renderView(); }
     else if (act === "q-cancel") { S.qEdit = ""; renderView(); }
     else if (act === "q-print") ncPrint();
@@ -2802,7 +2887,7 @@ table.rh select{min-width:118px}
     else if (act === "alarm-open") alarmOpen();
     else if (act === "alarm-cancel") $("alarmDlg").hidden = true;
     else if (act === "alarm-send") alarmSend();
-    else if (act === "alarm-ack") alarmAck();
+    else if (act === "alarm-ack") alarmAck(el.closest(".acard"));
     else if (act === "rh-person-print") rhPersonDoc();
     else if (act === "plan-print") planDoc();
     else if (act === "pdate-prev" || act === "pdate-next" || act === "pdate-today") { S.pDate = act === "pdate-today" ? today() : addDays(S.pDate, act === "pdate-prev" ? -1 : 1); S.pConfirm = false; drawPForm(); }
@@ -2950,7 +3035,7 @@ else if (k === "rhck") {
     if (!el || !DB) return;
     e.preventDefault();
     try { if (AUTH_CHANNEL) { await DB.removeChannel(AUTH_CHANNEL); AUTH_CHANNEL = null; } await DB.auth.signOut(); }
-    finally { ME = { id: null, name: "" }; S.reports = []; S.transfers = []; S.plans = []; S.cfg = null; S.qual = null; NCSEEN = null; S.roles = []; S.rolesOk = false; S.ready = false; S.storage = "error"; S.canWrite = false; showLogin("Vous êtes déconnecté."); }
+    finally { ME = { id: null, name: "" }; S.reports = []; S.transfers = []; S.plans = []; S.cfg = null; S.qual = null; S.recep = null; NCSEEN = null; RSEEN = null; ALARM.caught = false; S.roles = []; S.rolesOk = false; S.ready = false; S.storage = "error"; S.canWrite = false; showLogin("Vous êtes déconnecté."); }
   });
   (async function init() {
     document.querySelectorAll("img.logo").forEach(function (i) { i.src = LOGO; });
@@ -2967,7 +3052,7 @@ else if (k === "rhck") {
       if (result.error) throw result.error;
       await enterApp(result.data.session);
       DB.auth.onAuthStateChange(function (event, session) {
-        if (event === "SIGNED_OUT") { ME = { id: null, name: "" }; S.reports = []; S.transfers = []; S.plans = []; S.cfg = null; S.qual = null; NCSEEN = null; S.roles = []; S.rolesOk = false; S.ready = false; showLogin(""); }
+        if (event === "SIGNED_OUT") { ME = { id: null, name: "" }; S.reports = []; S.transfers = []; S.plans = []; S.cfg = null; S.qual = null; S.recep = null; NCSEEN = null; RSEEN = null; ALARM.caught = false; S.roles = []; S.rolesOk = false; S.ready = false; showLogin(""); }
         else if (session && session.user && !ME.id) { enterApp(session); }
       });
     } catch (err) { showLogin("Initialisation Supabase impossible : " + (err && err.message ? err.message : "erreur inconnue")); }
